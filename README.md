@@ -5,10 +5,12 @@ Sistema inteligente de consulta médica con IA, optimizado para Vercel.
 ## Características
 
 - 🔐 **Autenticación básica** - Login y registro sin verificación de email
-- 💬 **Chat médico guiado** - IA que hace preguntas estructuradas sobre síntomas
+- 🤖 **IA Real Opcional (Groq)** - Conversaciones naturales con IA gratuita
+- 💬 **Chat médico guiado** - Sistema basado en reglas como fallback
 - 📄 **Generación de reportes PDF** - Descarga un informe completo de tu consulta
 - 📱 **Diseño moderno y responsive** - UI optimizada para todos los dispositivos
 - ⚡ **Optimizado para Vercel** - Despliegue rápido y sin configuración adicional
+- 🆓 **100% Gratuito** - Funciona sin APIs o con Groq gratis
 
 ## Tecnologías
 
@@ -51,6 +53,26 @@ npm start
 3. **Nueva Consulta**: Haz clic en el botón "+" para iniciar
 4. **Chat Médico**: Responde las preguntas del asistente
 5. **Descarga PDF**: Al finalizar, descarga tu reporte médico
+
+## 🤖 Activar IA Real (Opcional pero Recomendado)
+
+Por defecto, el sistema usa un sistema basado en reglas (4 preguntas predefinidas). Para activar IA real con Groq:
+
+### Método Rápido (Script Automático):
+```bash
+./setup-groq.sh
+```
+
+### Método Manual:
+1. Crea un archivo `.env.local` en la raíz del proyecto
+2. Ve a https://console.groq.com y obtén una API Key gratis
+3. Agrega esto al archivo:
+```bash
+NEXT_PUBLIC_GROQ_API_KEY=tu_key_aqui
+```
+4. Reinicia el servidor: `npm run dev`
+
+📖 Ver guía completa: `SETUP_IA.md` y `HOW_TO_GET_GROQ_API_KEY.md`
 
 ## Estructura del Proyecto
 
