@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation'
 import { ArrowLeft, Send, Activity, FileDown } from 'lucide-react'
 import { getUser } from '@/lib/auth'
 import { getConsultations, saveConsultation, type Consultation, type Message } from '@/lib/consultations'
-import { getMedicalResponse, generateMedicalReport } from '@/lib/medical-ai'
+import { getMedicalResponseWithGroq, generateMedicalReport } from '@/lib/medical-ai-groq'
 import { generatePDF } from '@/lib/pdf-generator'
 
 export default function ConsultationPage() {
@@ -93,8 +93,8 @@ export default function ConsultationPage() {
 
     const updatedMessages = [...consultation.messages, userMessage]
     
-    // Get AI response
-    const responseContent = await getMedicalResponse(input, updatedMessages)
+    // Get AI response (uses Groq if configured, otherwise falls back to rule-based)
+    const responseContent = await getMedicalResponseWithGroq(input, updatedMessages)
 
     const aiMessage: Message = {
       id: (Date.now() + 1).toString(),
