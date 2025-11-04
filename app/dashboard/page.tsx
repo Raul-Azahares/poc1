@@ -2,14 +2,17 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Activity, Plus, LogOut, Clock, MessageSquare, FileCheck } from 'lucide-react'
+import { Activity, Plus, LogOut, Clock, MessageSquare, FileCheck, MessageCircle } from 'lucide-react'
 import { getUser, logout } from '@/lib/auth'
 import { getConsultations, createConsultation, type Consultation } from '@/lib/consultations'
+import FloatingChat from '@/app/components/FloatingChat'
 
 export default function DashboardPage() {
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
   const [consultations, setConsultations] = useState<Consultation[]>([])
+  const [showFloatingChat, setShowFloatingChat] = useState(false)
+  const [floatingChatId, setFloatingChatId] = useState<string | undefined>(undefined)
 
   useEffect(() => {
     const currentUser = getUser()
@@ -18,6 +21,16 @@ export default function DashboardPage() {
     } else {
       setUser(currentUser)
       loadConsultations(currentUser.email)
+      
+      // Check if we should open floating chat (from minimized consultation)
+      if (typeof window !== 'undefined') {
+        const shouldOpenChat = sessionStorage.getItem('openFloatingChat')
+        if (shouldOpenChat) {
+          setFloatingChatId(shouldOpenChat)
+          setShowFloatingChat(true)
+          sessionStorage.removeItem('openFloatingChat')
+        }
+      }
     }
   }, [router])
 
@@ -144,6 +157,29 @@ export default function DashboardPage() {
           </div>
         )}
       </main>
+
+      {/* Floating Chat Button */}
+      {!showFloatingChat && (
+        <button
+          onClick={() => setShowFloatingChat(true)}
+          className="fixed bottom-6 right-6 gradient-button text-white rounded-full p-4 shadow-2xl hover:opacity-90 transition-all hover:scale-110 z-40 flex items-center gap-2"
+          title="Quick Medical Consultation"
+        >
+          <MessageCircle className="w-6 h-6" />
+        </button>
+      )}
+
+      {/* Floating Chat Widget */}
+      {showFloatingChat && (
+        <FloatingChat 
+          onClose={() => {
+            setShowFloatingChat(false)
+            setFloatingChatId(undefined)
+            loadConsultations(user.email)
+          }} 
+          consultationId={floatingChatId}
+        />
+      )}
     </div>
   )
 }

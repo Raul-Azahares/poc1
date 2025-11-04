@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import { ArrowLeft, Send, Activity, FileDown } from 'lucide-react'
+import { ArrowLeft, Send, Activity, FileDown, Minimize2 } from 'lucide-react'
 import { getUser } from '@/lib/auth'
 import { getConsultations, saveConsultation, type Consultation, type Message } from '@/lib/consultations'
 import { getMedicalResponseWithGroq, generateMedicalReport } from '@/lib/medical-ai-groq'
@@ -57,15 +57,15 @@ export default function ConsultationPage() {
   const handleInitialMessage = async (currentConsultation: Consultation) => {
     const initialMessage: Message = {
       id: Date.now().toString(),
-      role: 'assistant',
-      content: "Hello! I need a medical consultation.",
+      role: 'user',
+      content: "Hello, I need a medical consultation.",
       timestamp: new Date()
     }
 
     const responseMessage: Message = {
       id: (Date.now() + 1).toString(),
       role: 'assistant',
-      content: "Of course, I'm here to help. Could you please tell me what symptoms you're experiencing?",
+      content: "Good day. I'm Dr. MediConsult AI. I'll be conducting your medical intake today. Could you please describe the primary symptoms you're experiencing? Include details like location, type of pain or discomfort, and when you first noticed them.",
       timestamp: new Date()
     }
 
@@ -105,14 +105,11 @@ export default function ConsultationPage() {
 
     const finalMessages = [...updatedMessages, aiMessage]
 
-    // Check if consultation is complete (4 questions answered)
-    const userMessagesCount = finalMessages.filter(m => m.role === 'user').length
-    const isComplete = userMessagesCount >= 4
-
+    // Don't auto-complete - let user decide when to generate report
     const updatedConsultation: Consultation = {
       ...consultation,
       messages: finalMessages,
-      completed: isComplete,
+      completed: false, // User will manually complete by generating report
       title: updatedMessages[0]?.content.substring(0, 50) || 'Consultation'
     }
 
@@ -127,6 +124,14 @@ export default function ConsultationPage() {
 
     const report = generateMedicalReport(consultation.messages)
     generatePDF(report, user.name, consultation.createdAt)
+    
+    // Mark consultation as completed after generating report
+    const completedConsultation: Consultation = {
+      ...consultation,
+      completed: true
+    }
+    saveConsultation(completedConsultation)
+    setConsultation(completedConsultation)
   }
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -141,6 +146,14 @@ export default function ConsultationPage() {
       hour: '2-digit',
       minute: '2-digit'
     })
+  }
+
+  const handleMinimize = () => {
+    // Save current state and redirect to dashboard with floating chat
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('openFloatingChat', consultationId)
+    }
+    router.push('/dashboard')
   }
 
   if (!consultation) return null
@@ -166,15 +179,25 @@ export default function ConsultationPage() {
                 <h1 className="text-xl font-semibold text-gray-800">Medical Consultation</h1>
               </div>
             </div>
-            {consultation.completed && (
+            <div className="flex items-center gap-2">
               <button
-                onClick={handleDownloadPDF}
-                className="flex items-center gap-2 px-4 py-2 gradient-button text-white rounded-lg hover:opacity-90 transition-opacity"
+                onClick={handleMinimize}
+                className="flex items-center gap-2 px-4 py-2 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                title="Minimize to floating chat and return to dashboard"
               >
-                <FileDown className="w-4 h-4" />
-                Download Report
+                <Minimize2 className="w-4 h-4" />
+                <span className="hidden sm:inline">Minimize</span>
               </button>
-            )}
+              {consultation.messages.filter(m => m.role === 'user').length >= 3 && (
+                <button
+                  onClick={handleDownloadPDF}
+                  className="flex items-center gap-2 px-4 py-2 gradient-button text-white rounded-lg hover:opacity-90 transition-opacity"
+                >
+                  <FileDown className="w-4 h-4" />
+                  {consultation.completed ? 'Download Report Again' : 'Generate & Download Report'}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </header>
@@ -232,20 +255,20 @@ export default function ConsultationPage() {
               onChange={(e) => setInput(e.target.value)}
               onKeyPress={handleKeyPress}
               placeholder="Type your response..."
-              disabled={isLoading || consultation.completed}
+              disabled={isLoading}
               className="flex-1 px-4 py-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
             <button
               onClick={handleSendMessage}
-              disabled={!input.trim() || isLoading || consultation.completed}
+              disabled={!input.trim() || isLoading}
               className="px-6 py-3 gradient-button text-white rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               <Send className="w-5 h-5" />
             </button>
           </div>
-          {consultation.completed && (
-            <p className="text-sm text-green-600 text-center mt-2">
-              Consultation completed! Download your report above.
+          {consultation.messages.filter(m => m.role === 'user').length >= 3 && (
+            <p className="text-sm text-blue-600 text-center mt-2">
+              💡 Tip: You can generate your medical report at any time using the button above
             </p>
           )}
         </div>
