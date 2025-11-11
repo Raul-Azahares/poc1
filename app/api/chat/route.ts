@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Groq from 'groq-sdk';
 
-// Structured questions following the medical pre-consultation flow
-const structuredQuestions = [
+// Structured questions in English
+const structuredQuestionsEN = [
   // 1. Introduction and Context
   "Hello! I'm your medical pre-consultation assistant. I can help you record how you're feeling and prepare a summary that a healthcare professional can review later. To start, tell me a bit about your condition. What brings you in today?",
   
@@ -47,6 +47,87 @@ const structuredQuestions = [
   "Perfect. Your information has been saved. Remember, I am a support assistant and do not replace the assessment of a medical professional. Thank you for your time! A specialist will review your record soon."
 ];
 
+// Structured questions in Spanish
+const structuredQuestionsES = [
+  // 1. Introducción y Contexto
+  "¡Hola! Soy tu asistente de pre-consulta médica. Puedo ayudarte a registrar cómo te sientes y preparar un resumen que un profesional de la salud podrá revisar después. Para comenzar, cuéntame un poco sobre tu condición. ¿Qué te trae por aquí hoy?",
+  
+  // 2. Evaluación Inicial de Síntomas
+  "Gracias por compartir eso. ¿Cuánto tiempo llevas experimentando estos síntomas o malestares?",
+  "¿Han empeorado, mejorado o se han mantenido igual desde que comenzaron?",
+  "¿Podrías describir cómo se siente el malestar o dolor? (Por ejemplo, su intensidad, frecuencia, o si empeora con ciertas actividades.)",
+  "¿Tienes algún otro síntoma que creas que podría estar relacionado? (Por ejemplo: fiebre, tos, dolor, fatiga, etc.)",
+  
+  // 3. Información para Completar el Expediente Médico
+  // 3.1. Información Personal del Paciente
+  "Perfecto. Basándome en lo que me has contado, puedo crear un expediente médico de pre-consulta para que el doctor tenga un resumen claro de tu situación. Te haré una serie de preguntas para recopilar información relevante para completar tu expediente médico. ¿Podrías decirme tu nombre completo?",
+  "¿Cuántos años tienes?",
+  "¿Cuál es tu sexo biológico?",
+  "¿En qué ciudad o país te encuentras actualmente?",
+  "¿Podrías decirme tu peso y altura aproximados? (Esto me ayudará a calcular tu Índice de Masa Corporal, o IMC).",
+  
+  // 3.2. Historial Médico
+  "Ahora, cuéntame un poco sobre tu historial médico. ¿Tienes alguna enfermedad crónica o condición diagnosticada?",
+  "¿Estás tomando algún medicamento actualmente o siguiendo algún tratamiento? Si es así, ¿podrías decirme cuáles y con qué frecuencia?",
+  "¿Has tenido alguna cirugía importante en el pasado?",
+  "¿Tienes alguna alergia conocida a medicamentos, alimentos u otras sustancias?",
+  
+  // 3.3. Hábitos y Estilo de Vida
+  "Me gustaría conocer un poco sobre tu estilo de vida, ya que puede influir en tu salud. ¿Fumas o consumes alcohol con frecuencia?",
+  "¿Realizas alguna actividad física de forma regular?",
+  "¿Cómo han estado tu sueño y tus niveles de estrés últimamente?",
+  "¿Cómo describirías tu alimentación en general?",
+  
+  // 3.4. Signos Vitales y Datos Recientes
+  "Si tienes algunos datos recientes, como tu temperatura, presión arterial o frecuencia cardíaca, ¿podrías compartirlos conmigo? Si no los tienes, no hay problema, puedo continuar con la información que ya me has proporcionado.",
+  "¿Podrías decirme tu temperatura actual o la más reciente que hayas registrado?",
+  "¿Tienes tu lectura más reciente de presión arterial? Si es así, ¿podrías compartir los valores sistólico y diastólico?",
+  "¿Podrías decirme tu frecuencia cardíaca actual o la última que hayas medido?",
+  
+  // 3.5. Documentos Médicos o Pruebas
+  "¿Tienes algún examen, análisis o reporte médico reciente que quieras mencionar o compartir? (Por ejemplo: análisis de sangre, radiografías, estudios de laboratorio, etc.) Si deseas, puedes contarme brevemente de qué se trata.",
+  
+  // 4. Cierre y Consentimiento Final
+  "Excelente. Con esta información, puedo crear tu expediente médico de pre-consulta. ¿Autorizas el uso de esta información únicamente para fines de evaluación médica y mejora del servicio?",
+  "Perfecto. Tu información ha sido guardada. Recuerda que soy un asistente de apoyo y no reemplazo la valoración de un profesional médico. ¡Gracias por tu tiempo! Un especialista revisará tu expediente pronto."
+];
+
+// Detect language from user's first message
+async function detectLanguage(message: string, apiKey: string): Promise<'es' | 'en'> {
+  try {
+    const groq = new Groq({ apiKey });
+    const completion = await groq.chat.completions.create({
+      messages: [
+        {
+          role: "system",
+          content: "You are a language detector. Analyze the following text and respond with ONLY 'es' for Spanish or 'en' for English. Do not add any explanation."
+        },
+        {
+          role: "user",
+          content: message
+        }
+      ],
+      model: "llama-3.1-8b-instant",
+      temperature: 0.1,
+      max_tokens: 5,
+    });
+    
+    const detected = completion.choices[0]?.message?.content?.trim().toLowerCase() || 'en';
+    return detected.startsWith('es') ? 'es' : 'en';
+  } catch (error) {
+    // Fallback: simple heuristic detection
+    const spanishWords = ['hola', 'tengo', 'dolor', 'fiebre', 'síntoma', 'me', 'te', 'le', 'nos', 'les', 'estoy', 'estás', 'está'];
+    const lowerMessage = message.toLowerCase();
+    const hasSpanish = spanishWords.some(word => lowerMessage.includes(word));
+    return hasSpanish ? 'es' : 'en';
+  }
+}
+
+// Get questions based on language
+function getStructuredQuestions(language: 'es' | 'en') {
+  return language === 'es' ? structuredQuestionsES : structuredQuestionsEN;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { message, messageHistory } = await request.json();
@@ -56,6 +137,40 @@ export async function POST(request: NextRequest) {
     
     // Check if Groq API key is configured
     const apiKey = process.env.NEXT_PUBLIC_GROQ_API_KEY;
+    
+    // Detect language from user messages
+    let detectedLanguage: 'es' | 'en' = 'en';
+    
+    // Get the first user message (current message or from history)
+    const firstUserMessage = message || messageHistory.find((m: any) => m.role === 'user')?.content || '';
+    
+    if (firstUserMessage) {
+      // Detect language from first user message
+      if (apiKey && apiKey !== 'PEGA_TU_KEY_AQUI') {
+        try {
+          detectedLanguage = await detectLanguage(firstUserMessage, apiKey);
+        } catch (error) {
+          // Fallback to heuristic if API fails
+          const spanishWords = ['hola', 'tengo', 'dolor', 'fiebre', 'síntoma', 'me', 'te', 'le', 'nos', 'les', 'estoy', 'estás', 'está', 'qué', 'cómo', 'dónde', 'tengo', 'siento', 'dolor'];
+          const lowerMessage = firstUserMessage.toLowerCase();
+          detectedLanguage = spanishWords.some(word => lowerMessage.includes(word)) ? 'es' : 'en';
+        }
+      } else {
+        // Fallback heuristic detection
+        const spanishWords = ['hola', 'tengo', 'dolor', 'fiebre', 'síntoma', 'me', 'te', 'le', 'nos', 'les', 'estoy', 'estás', 'está', 'qué', 'cómo', 'dónde', 'tengo', 'siento', 'dolor'];
+        const lowerMessage = firstUserMessage.toLowerCase();
+        detectedLanguage = spanishWords.some(word => lowerMessage.includes(word)) ? 'es' : 'en';
+      }
+    }
+    
+    // Get questions in detected language
+    const structuredQuestions = getStructuredQuestions(detectedLanguage);
+    
+    // Final messages in both languages
+    const finalMessages = {
+      en: "I appreciate all the information you've shared. Based on our discussion, I have a comprehensive picture of your condition. You can continue providing additional details if you'd like, or you can generate your medical report using the button at the top of the page. This report will be valuable to share with your healthcare provider.",
+      es: "Agradezco toda la información que has compartido. Con base en nuestra conversación, tengo un panorama completo de tu condición. Puedes continuar proporcionando detalles adicionales si lo deseas, o puedes generar tu reporte médico usando el botón en la parte superior de la página. Este reporte será valioso para compartir con tu profesional de la salud."
+    };
     
     if (!apiKey || apiKey === 'PEGA_TU_KEY_AQUI') {
       // Fallback to rule-based system if no API key
@@ -69,19 +184,25 @@ export async function POST(request: NextRequest) {
             const fullName = userMessages[5]?.content || "";
             const firstName = fullName.split(' ')[0] || fullName;
             if (firstName) {
-              response = response.replace("Excellent.", `Excellent, ${firstName}.`);
+              if (detectedLanguage === 'es') {
+                response = response.replace("Excelente.", `Excelente, ${firstName}.`);
+              } else {
+                response = response.replace("Excellent.", `Excellent, ${firstName}.`);
+              }
             }
           }
         }
         
         return NextResponse.json({ 
           response: response,
-          mode: 'rule-based'
+          mode: 'rule-based',
+          language: detectedLanguage
         });
       } else {
         return NextResponse.json({ 
-          response: "I appreciate all the information you've shared. Based on our discussion, I have a comprehensive picture of your condition. You can continue providing additional details if you'd like, or you can generate your medical report using the button at the top of the page. This report will be valuable to share with your healthcare provider.",
-          mode: 'rule-based'
+          response: finalMessages[detectedLanguage],
+          mode: 'rule-based',
+          language: detectedLanguage
         });
       }
     }
@@ -106,12 +227,16 @@ export async function POST(request: NextRequest) {
             // Extract first name (or use full name if it's short)
             const firstName = fullName.split(' ')[0] || fullName;
             if (firstName) {
-              nextQuestion = nextQuestion.replace("Excellent.", `Excellent, ${firstName}.`);
+              if (detectedLanguage === 'es') {
+                nextQuestion = nextQuestion.replace("Excelente.", `Excelente, ${firstName}.`);
+              } else {
+                nextQuestion = nextQuestion.replace("Excellent.", `Excellent, ${firstName}.`);
+              }
             }
           }
         }
       } else {
-        nextQuestion = "I appreciate all the information you've shared. Based on our discussion, I have a comprehensive picture of your condition. You can continue providing additional details if you'd like, or you can generate your medical report using the button at the top of the page. This report will be valuable to share with your healthcare provider.";
+        nextQuestion = finalMessages[detectedLanguage];
       }
 
       // Create a strict system prompt that tells the AI to ask the exact question
@@ -148,7 +273,8 @@ Your response should be ONLY the question above, exactly as written. You may add
 
       return NextResponse.json({ 
         response: responseContent,
-        mode: 'groq-ai-structured'
+        mode: 'groq-ai-structured',
+        language: detectedLanguage
       });
 
     } catch (groqError) {
@@ -165,19 +291,25 @@ Your response should be ONLY the question above, exactly as written. You may add
             const fullName = userMessages[5]?.content || "";
             const firstName = fullName.split(' ')[0] || fullName;
             if (firstName) {
-              response = response.replace("Excellent.", `Excellent, ${firstName}.`);
+              if (detectedLanguage === 'es') {
+                response = response.replace("Excelente.", `Excelente, ${firstName}.`);
+              } else {
+                response = response.replace("Excellent.", `Excellent, ${firstName}.`);
+              }
             }
           }
         }
         
         return NextResponse.json({ 
           response: response,
-          mode: 'rule-based-fallback'
+          mode: 'rule-based-fallback',
+          language: detectedLanguage
         });
       } else {
         return NextResponse.json({ 
-          response: "I appreciate all the information you've shared. Based on our discussion, I have a comprehensive picture of your condition. You can continue providing additional details if you'd like, or you can generate your medical report using the button at the top of the page. This report will be valuable to share with your healthcare provider.",
-          mode: 'rule-based-fallback'
+          response: finalMessages[detectedLanguage],
+          mode: 'rule-based-fallback',
+          language: detectedLanguage
         });
       }
     }
