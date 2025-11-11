@@ -6,7 +6,7 @@ import { ArrowLeft, Send, Activity, FileDown, Minimize2 } from 'lucide-react'
 import { getUser } from '@/lib/auth'
 import { getConsultations, saveConsultation, type Consultation, type Message } from '@/lib/consultations'
 import { getMedicalResponseWithGroq, generateMedicalReport } from '@/lib/medical-ai-groq'
-import { generatePDF } from '@/lib/pdf-generator'
+import { generatePDFFromMessages } from '@/lib/pdf-generator'
 
 export default function ConsultationPage() {
   const router = useRouter()
@@ -55,23 +55,16 @@ export default function ConsultationPage() {
   }
 
   const handleInitialMessage = async (currentConsultation: Consultation) => {
-    const initialMessage: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: "Hello, I need a medical consultation.",
-      timestamp: new Date()
-    }
-
     const responseMessage: Message = {
-      id: (Date.now() + 1).toString(),
+      id: Date.now().toString(),
       role: 'assistant',
-      content: "Good day. I'm Dr. MediConsult AI. I'll be conducting your medical intake today. Could you please describe the primary symptoms you're experiencing? Include details like location, type of pain or discomfort, and when you first noticed them.",
+      content: "Hello! I'm your medical pre-consultation assistant. I can help you record how you're feeling and prepare a summary that a healthcare professional can review later. To start, tell me a bit about your condition. What brings you in today?",
       timestamp: new Date()
     }
 
     const updatedConsultation = {
       ...currentConsultation,
-      messages: [initialMessage, responseMessage]
+      messages: [responseMessage]
     }
 
     saveConsultation(updatedConsultation)
@@ -122,8 +115,7 @@ export default function ConsultationPage() {
   const handleDownloadPDF = () => {
     if (!consultation || !user) return
 
-    const report = generateMedicalReport(consultation.messages)
-    generatePDF(report, user.name, consultation.createdAt)
+    generatePDFFromMessages(consultation.messages, consultation.createdAt)
     
     // Mark consultation as completed after generating report
     const completedConsultation: Consultation = {
@@ -274,15 +266,6 @@ export default function ConsultationPage() {
         </div>
       </div>
 
-      {/* Disclaimer */}
-      <div className="bg-amber-50 border-t border-amber-200">
-        <div className="max-w-4xl mx-auto px-4 py-2">
-          <p className="text-xs text-amber-800 text-center flex items-center justify-center gap-2">
-            <Activity className="w-3 h-3" />
-            Made with Emergent - This is an AI assistant and not a substitute for professional medical advice
-          </p>
-        </div>
-      </div>
     </div>
   )
 }

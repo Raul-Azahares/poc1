@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { X, Minimize2, Maximize2, Send, Activity, FileDown } from 'lucide-react'
 import { getMedicalResponseWithGroq, generateMedicalReport } from '@/lib/medical-ai-groq'
-import { generatePDF } from '@/lib/pdf-generator'
+import { generatePDFFromMessages } from '@/lib/pdf-generator'
 import { getUser } from '@/lib/auth'
 import { getConsultations, saveConsultation, createConsultation, type Consultation, type Message } from '@/lib/consultations'
 
@@ -50,23 +50,16 @@ export default function FloatingChat({ onClose, consultationId }: FloatingChatPr
   }
 
   const initializeChat = async (currentConsultation: Consultation) => {
-    const initialMessage: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: "Hello, I need a medical consultation.",
-      timestamp: new Date()
-    }
-
     const responseMessage: Message = {
-      id: (Date.now() + 1).toString(),
+      id: Date.now().toString(),
       role: 'assistant',
-      content: "Good day. I'm Dr. MediConsult AI. Could you please describe the primary symptoms you're experiencing?",
+      content: "Hello! I'm your medical pre-consultation assistant. I can help you record how you're feeling and prepare a summary that a healthcare professional can review later. To start, tell me a bit about your condition. What brings you in today?",
       timestamp: new Date()
     }
 
     const updatedConsultation = {
       ...currentConsultation,
-      messages: [initialMessage, responseMessage]
+      messages: [responseMessage]
     }
 
     saveConsultation(updatedConsultation)
@@ -113,8 +106,7 @@ export default function FloatingChat({ onClose, consultationId }: FloatingChatPr
   const handleDownloadPDF = () => {
     if (!consultation || !user) return
 
-    const report = generateMedicalReport(consultation.messages)
-    generatePDF(report, user.name, consultation.createdAt)
+    generatePDFFromMessages(consultation.messages, consultation.createdAt)
     
     const completedConsultation: Consultation = {
       ...consultation,

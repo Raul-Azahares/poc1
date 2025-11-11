@@ -33,10 +33,12 @@ export async function getMedicalResponseWithGroq(
     const data = await response.json();
     
     // Log which mode is being used (optional, for debugging)
-    if (data.mode === 'groq-ai') {
-      console.log('✅ Using Groq AI');
+    if (data.mode === 'groq-ai-structured') {
+      console.log('✅ Using Groq AI with structured questions');
+    } else if (data.mode === 'rule-based' || data.mode === 'rule-based-fallback') {
+      console.log('ℹ️ Using rule-based structured questions');
     } else {
-      console.log('ℹ️ Using rule-based system');
+      console.log('ℹ️ Using system response');
     }
     
     return data.response;
