@@ -55,10 +55,20 @@ export default function ConsultationPage() {
   }
 
   const handleInitialMessage = async (currentConsultation: Consultation) => {
+    // Detect language from browser settings or default to English
+    const browserLang = typeof window !== 'undefined' 
+      ? navigator.language || navigator.languages?.[0] || 'en'
+      : 'en';
+    const isSpanish = browserLang.startsWith('es');
+    
+    const initialMessage = isSpanish
+      ? "¡Hola! Soy tu asistente de pre-consulta médica. Puedo ayudarte a registrar cómo te sientes y preparar un resumen que un profesional de la salud podrá revisar después. Para comenzar, cuéntame un poco sobre tu condición. ¿Qué te trae por aquí hoy?"
+      : "Hello! I'm your medical pre-consultation assistant. I can help you record how you're feeling and prepare a summary that a healthcare professional can review later. To start, tell me a bit about your condition. What brings you in today?";
+    
     const responseMessage: Message = {
       id: Date.now().toString(),
       role: 'assistant',
-      content: "Hello! I'm your medical pre-consultation assistant. I can help you record how you're feeling and prepare a summary that a healthcare professional can review later. To start, tell me a bit about your condition. What brings you in today?",
+      content: initialMessage,
       timestamp: new Date()
     }
 
@@ -74,42 +84,79 @@ export default function ConsultationPage() {
   const handleSendMessage = async () => {
     if (!input.trim() || !consultation || isLoading) return
 
+    // Save user input and clear immediately
+    const userInput = input.trim()
+    setInput('')
     setIsLoading(true)
 
-    // Add user message
+    // Add user message IMMEDIATELY (optimistic update)
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: input.trim(),
+      content: userInput,
       timestamp: new Date()
     }
 
-    const updatedMessages = [...consultation.messages, userMessage]
+    const messagesWithUser = [...consultation.messages, userMessage]
     
-    // Get AI response (uses Groq if configured, otherwise falls back to rule-based)
-    const responseContent = await getMedicalResponseWithGroq(input, updatedMessages)
-
-    const aiMessage: Message = {
-      id: (Date.now() + 1).toString(),
-      role: 'assistant',
-      content: responseContent,
-      timestamp: new Date()
-    }
-
-    const finalMessages = [...updatedMessages, aiMessage]
-
-    // Don't auto-complete - let user decide when to generate report
-    const updatedConsultation: Consultation = {
+    // Update consultation immediately with user message
+    const consultationWithUser: Consultation = {
       ...consultation,
-      messages: finalMessages,
-      completed: false, // User will manually complete by generating report
-      title: updatedMessages[0]?.content.substring(0, 50) || 'Consultation'
+      messages: messagesWithUser,
+      title: messagesWithUser[0]?.content.substring(0, 50) || 'Consultation'
     }
+    
+    setConsultation(consultationWithUser)
+    saveConsultation(consultationWithUser)
+    
+    // Scroll to bottom to show user message
+    setTimeout(() => scrollToBottom(), 100)
 
-    saveConsultation(updatedConsultation)
-    setConsultation(updatedConsultation)
-    setInput('')
-    setIsLoading(false)
+    try {
+      // Get AI response (uses Groq if configured, otherwise falls back to rule-based)
+      const responseContent = await getMedicalResponseWithGroq(userInput, messagesWithUser)
+
+      const aiMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: responseContent,
+        timestamp: new Date()
+      }
+
+      const finalMessages = [...messagesWithUser, aiMessage]
+
+      // Update with AI response
+      const updatedConsultation: Consultation = {
+        ...consultation,
+        messages: finalMessages,
+        completed: false, // User will manually complete by generating report
+        title: messagesWithUser[0]?.content.substring(0, 50) || 'Consultation'
+      }
+
+      saveConsultation(updatedConsultation)
+      setConsultation(updatedConsultation)
+      
+      // Scroll to bottom to show AI response
+      setTimeout(() => scrollToBottom(), 100)
+    } catch (error) {
+      console.error('Error getting AI response:', error)
+      // On error, show error message
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: 'Lo siento, hubo un error al procesar tu mensaje. Por favor intenta de nuevo.',
+        timestamp: new Date()
+      }
+      const messagesWithError = [...messagesWithUser, errorMessage]
+      const consultationWithError: Consultation = {
+        ...consultation,
+        messages: messagesWithError
+      }
+      saveConsultation(consultationWithError)
+      setConsultation(consultationWithError)
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const handleDownloadPDF = () => {
@@ -224,10 +271,10 @@ export default function ConsultationPage() {
             {isLoading && (
               <div className="flex justify-start">
                 <div className="bg-white rounded-2xl rounded-bl-sm px-6 py-3 shadow-sm border border-gray-100">
-                  <div className="flex gap-2">
-                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                  <div className="flex gap-1.5">
+                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
                   </div>
                 </div>
               </div>

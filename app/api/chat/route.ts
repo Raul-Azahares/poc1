@@ -92,7 +92,7 @@ const structuredQuestionsES = [
   "Perfecto. Tu información ha sido guardada. Recuerda que soy un asistente de apoyo y no reemplazo la valoración de un profesional médico. ¡Gracias por tu tiempo! Un especialista revisará tu expediente pronto."
 ];
 
-// Detect language from user's first message
+// Detect language from user's message
 async function detectLanguage(message: string, apiKey: string): Promise<'es' | 'en'> {
   try {
     const groq = new Groq({ apiKey });
@@ -115,10 +115,23 @@ async function detectLanguage(message: string, apiKey: string): Promise<'es' | '
     const detected = completion.choices[0]?.message?.content?.trim().toLowerCase() || 'en';
     return detected.startsWith('es') ? 'es' : 'en';
   } catch (error) {
-    // Fallback: simple heuristic detection
-    const spanishWords = ['hola', 'tengo', 'dolor', 'fiebre', 'síntoma', 'me', 'te', 'le', 'nos', 'les', 'estoy', 'estás', 'está'];
-    const lowerMessage = message.toLowerCase();
-    const hasSpanish = spanishWords.some(word => lowerMessage.includes(word));
+    // Fallback: improved heuristic detection with more Spanish words
+    const spanishWords = [
+      'hola', 'tengo', 'dolor', 'fiebre', 'síntoma', 'me', 'te', 'le', 'nos', 'les', 
+      'estoy', 'estás', 'está', 'qué', 'cómo', 'dónde', 'cuándo', 'por qué', 'quién',
+      'sí', 'si', 'bastante', 'mucho', 'poco', 'muy', 'más', 'menos', 'también',
+      'nombre', 'años', 'edad', 'peso', 'altura', 'medicamento', 'alergia', 'cirugía',
+      'enfermedad', 'condición', 'síntomas', 'malestar', 'experimentando', 'llevas',
+      'podrías', 'podría', 'tienes', 'tiene', 'tengo', 'tiene', 'están', 'están',
+      'empeorado', 'mejorado', 'mantenido', 'intensidad', 'frecuencia', 'actividades'
+    ];
+    const lowerMessage = message.toLowerCase().trim();
+    
+    // Check for common Spanish words and patterns
+    const hasSpanish = spanishWords.some(word => lowerMessage.includes(word)) ||
+                      lowerMessage.match(/\b(sí|si|bastante|mucho|poco|muy|más|menos)\b/i) ||
+                      lowerMessage.match(/[áéíóúñü]/i); // Spanish accented characters
+    
     return hasSpanish ? 'es' : 'en';
   }
 }
@@ -126,6 +139,46 @@ async function detectLanguage(message: string, apiKey: string): Promise<'es' | '
 // Get questions based on language
 function getStructuredQuestions(language: 'es' | 'en') {
   return language === 'es' ? structuredQuestionsES : structuredQuestionsEN;
+}
+
+// Helper function for heuristic language detection
+function detectLanguageHeuristic(text: string): 'es' | 'en' {
+  const spanishWords = [
+    'hola', 'tengo', 'dolor', 'fiebre', 'síntoma', 'me', 'te', 'le', 'nos', 'les', 
+    'estoy', 'estás', 'está', 'qué', 'cómo', 'dónde', 'cuándo', 'por qué', 'quién',
+    'sí', 'si', 'bastante', 'mucho', 'poco', 'muy', 'más', 'menos', 'también',
+    'nombre', 'años', 'edad', 'peso', 'altura', 'medicamento', 'alergia', 'cirugía',
+    'enfermedad', 'condición', 'síntomas', 'malestar', 'experimentando', 'llevas',
+    'podrías', 'podría', 'tienes', 'tiene', 'tengo', 'tiene', 'están', 'están',
+    'empeorado', 'empeora', 'empeorar', 'mejorado', 'mejora', 'mejorar', 'mantenido', 
+    'intensidad', 'frecuencia', 'actividades', 'mal', 'bien', 'peor', 'mejor',
+    'días', 'horas', 'semanas', 'meses', 'años', 'minutos', 'segundos',
+    'intenso', 'intensa', 'leve', 'moderado', 'moderada', 'grave', 'severa', 'severo'
+  ];
+  const lowerMessage = text.toLowerCase().trim();
+  
+  // Check for Spanish words
+  const hasSpanishWord = spanishWords.some(word => {
+    // Check if word appears as a whole word (not just as part of another word)
+    const regex = new RegExp(`\\b${word}\\b`, 'i');
+    return regex.test(lowerMessage);
+  });
+  
+  // Check for Spanish patterns
+  const hasSpanishPattern = lowerMessage.match(/\b(sí|si|bastante|mucho|poco|muy|más|menos|mal|bien|peor|mejor)\b/i);
+  
+  // Check for Spanish accented characters
+  const hasAccents = /[áéíóúñü]/i.test(lowerMessage);
+  
+  // Check for Spanish verb endings (ar, er, ir conjugations)
+  const hasSpanishVerbEnding = /\b\w+(ar|er|ir|ando|iendo|ado|ido|amos|emos|imos|an|en|in)\b/i.test(lowerMessage);
+  
+  // Check for common Spanish question words at start
+  const startsWithSpanishQuestion = /^(qué|cuál|cuáles|cómo|dónde|cuándo|por qué|quién|quiénes|cuánto|cuánta|cuántos|cuántas)/i.test(lowerMessage);
+  
+  const hasSpanish = hasSpanishWord || hasSpanishPattern || hasAccents || hasSpanishVerbEnding || startsWithSpanishQuestion;
+  
+  return hasSpanish ? 'es' : 'en';
 }
 
 export async function POST(request: NextRequest) {
@@ -138,28 +191,123 @@ export async function POST(request: NextRequest) {
     // Check if Groq API key is configured
     const apiKey = process.env.NEXT_PUBLIC_GROQ_API_KEY;
     
-    // Detect language from user messages
+    // Detect language from user messages - prioritize current message, adapt to language changes
     let detectedLanguage: 'es' | 'en' = 'en';
     
-    // Get the first user message (current message or from history)
-    const firstUserMessage = message || messageHistory.find((m: any) => m.role === 'user')?.content || '';
+    // Get all user messages (current message + history)
+    const allUserMessages = [
+      ...messageHistory.filter((m: any) => m.role === 'user').map((m: any) => m.content),
+      message
+    ].filter(Boolean);
     
-    if (firstUserMessage) {
-      // Detect language from first user message
-      if (apiKey && apiKey !== 'PEGA_TU_KEY_AQUI') {
-        try {
-          detectedLanguage = await detectLanguage(firstUserMessage, apiKey);
-        } catch (error) {
-          // Fallback to heuristic if API fails
-          const spanishWords = ['hola', 'tengo', 'dolor', 'fiebre', 'síntoma', 'me', 'te', 'le', 'nos', 'les', 'estoy', 'estás', 'está', 'qué', 'cómo', 'dónde', 'tengo', 'siento', 'dolor'];
-          const lowerMessage = firstUserMessage.toLowerCase();
-          detectedLanguage = spanishWords.some(word => lowerMessage.includes(word)) ? 'es' : 'en';
+    // Priority 1: Check for clear time patterns first (most reliable indicator)
+    const currentMsg = message || '';
+    const englishTimePatterns = /\b\d+\s*(days?|hours?|weeks?|months?|years?|minutes?)\b/i;
+    const spanishTimePatterns = /\b\d+\s*(días?|horas?|semanas?|meses?|años?|minutos?)\b/i;
+    
+    if (englishTimePatterns.test(currentMsg) && !spanishTimePatterns.test(currentMsg)) {
+      detectedLanguage = 'en';
+    } else if (spanishTimePatterns.test(currentMsg) && !englishTimePatterns.test(currentMsg)) {
+      detectedLanguage = 'es';
+    } else if (currentMsg.trim().length > 0) {
+      // Check if message is ambiguous (just a name, number, or single word without language indicators)
+      // First check if it has clear language indicators
+      const hasLanguageIndicators = detectLanguageHeuristic(currentMsg) !== null;
+      const isOnlyName = /^[a-záéíóúñü\s]+$/i.test(currentMsg.trim()) && 
+                        currentMsg.trim().length <= 30 && 
+                        !hasLanguageIndicators &&
+                        !/\b(sí|si|hola|tengo|dolor|yes|no|hello|hi|have|pain|bad|good|fever|intenso|intense|mucho|much|poco|little|muy|very|más|more|menos|less|qué|what|cómo|how|dónde|where|cuándo|when|por qué|why|quién|who|estoy|am|estás|are|está|is|tienes|have|tiene|has|podrías|could|podría|would|mal|bien|well|días|days|horas|hours|semanas|weeks|meses|months|empeora|empeorar|mejora|mejorar)\b/i.test(currentMsg);
+      
+      // Get context language from previous messages (most recent assistant message)
+      let contextLanguage: 'es' | 'en' | null = null;
+      const assistantMessages = messageHistory.filter((m: any) => m.role === 'assistant');
+      
+      if (assistantMessages.length > 0) {
+        // Use the MOST RECENT assistant message (not the first one)
+        const lastAssistantMsg = assistantMessages[assistantMessages.length - 1].content.toLowerCase();
+        // More robust Spanish detection - check for multiple Spanish keywords
+        const spanishKeywords = [
+          'hola', 'asistente', 'pre-consulta', 'qué te trae', 'cuánto tiempo',
+          'cuántos años', 'entiendo', 'gracias por compartir', 'han empeorado',
+          'podrías describir', 'experimentando estos síntomas', 'malestares',
+          'mejorado o se han mantenido', 'describir cómo se siente', 'malestar o dolor',
+          'intensidad, frecuencia', 'ciertas actividades', 'algún otro síntoma',
+          'podría estar relacionado', 'fiebre, tos', 'dolor, fatiga', 'expediente médico',
+          'pre-consulta', 'resumen claro', 'serie de preguntas', 'recopilar información',
+          'completar tu expediente', 'nombre completo', 'sexo biológico', 'ciudad o país',
+          'peso y altura', 'índice de masa corporal', 'imc', 'enfermedades crónicas',
+          'tomando algún medicamento', 'cirugía importante', 'alergia conocida',
+          'fumas o consumes', 'actividad física', 'sueño y tus niveles', 'alimentación en general',
+          'datos recientes', 'temperatura', 'presión arterial', 'frecuencia cardíaca',
+          'examen, análisis', 'autorizas el uso', 'únicamente para fines'
+        ];
+        const hasSpanishInAssistant = spanishKeywords.some(keyword => lastAssistantMsg.includes(keyword));
+        // More robust English detection - check for multiple English keywords
+        const englishKeywords = [
+          'hello', 'assistant', 'what brings', 'how long', 'i see', 'thank you',
+          'have they worsened', 'could you describe', 'based on what', 'i can create',
+          'could you tell me', 'how old are you', 'what is your', 'medical record',
+          'perfect', 'i will ask', 'series of questions', 'gather relevant',
+          'completing your medical', 'full name', 'biological sex', 'city or country',
+          'approximate weight', 'body mass index', 'chronic illnesses', 'currently taking',
+          'major surgeries', 'known allergies', 'smoke or consume', 'regular physical',
+          'sleep and stress', 'overall diet', 'recent data', 'temperature', 'blood pressure',
+          'heart rate', 'recent tests', 'authorize the use', 'solely for medical'
+        ];
+        const hasEnglishInAssistant = englishKeywords.some(keyword => lastAssistantMsg.includes(keyword));
+        
+        if (hasSpanishInAssistant && !hasEnglishInAssistant) {
+          contextLanguage = 'es';
+        } else if (hasEnglishInAssistant && !hasSpanishInAssistant) {
+          contextLanguage = 'en';
         }
+      }
+      
+      // Priority 2: If message is a name, ALWAYS use context (don't even try to detect)
+      if (isOnlyName && contextLanguage) {
+        // Message is ambiguous (like a name), ALWAYS use context language
+        detectedLanguage = contextLanguage;
       } else {
-        // Fallback heuristic detection
-        const spanishWords = ['hola', 'tengo', 'dolor', 'fiebre', 'síntoma', 'me', 'te', 'le', 'nos', 'les', 'estoy', 'estás', 'está', 'qué', 'cómo', 'dónde', 'tengo', 'siento', 'dolor'];
-        const lowerMessage = firstUserMessage.toLowerCase();
-        detectedLanguage = spanishWords.some(word => lowerMessage.includes(word)) ? 'es' : 'en';
+        // Priority 3: Detect language from CURRENT message (only if not a name)
+        let detectedFromMessage: 'es' | 'en' | null = null;
+        
+        if (apiKey && apiKey !== 'PEGA_TU_KEY_AQUI') {
+          try {
+            detectedFromMessage = await detectLanguage(currentMsg, apiKey);
+          } catch (error) {
+            detectedFromMessage = detectLanguageHeuristic(currentMsg);
+          }
+        } else {
+          detectedFromMessage = detectLanguageHeuristic(currentMsg);
+        }
+        
+        // Use detected language if message has clear indicators
+        if (detectedFromMessage) {
+          detectedLanguage = detectedFromMessage;
+        } else if (contextLanguage) {
+          // Fallback to context if detection failed
+          detectedLanguage = contextLanguage;
+        } else {
+          // Final fallback
+          detectedLanguage = 'en';
+        }
+      }
+      
+      // Priority 3: Final fallback - check previous user messages if still ambiguous
+      if (!contextLanguage && allUserMessages.length > 1) {
+        const previousMessages = allUserMessages.slice(0, -1); // All except current
+        const previousText = previousMessages.join(' ').toLowerCase();
+        
+        // Count language indicators in previous messages
+        const spanishIndicators = previousText.match(/\b(sí|si|hola|tengo|dolor|bastante|mucho|poco|muy|más|menos|qué|cómo|dónde|cuándo|por qué|quién|estoy|estás|está|tienes|tiene|podrías|podría|mal|bien|días|horas|semanas|meses|intenso|fiebre)\b/i);
+        const englishIndicators = previousText.match(/\b(yes|no|hello|hi|have|pain|hurt|much|little|very|more|less|what|how|where|when|why|who|am|are|is|you|can|could|days|hours|weeks|months|bad|good|fine|fever|intense)\b/i);
+        
+        // If previous messages are clearly in one language, use that for ambiguous responses
+        if (spanishIndicators && spanishIndicators.length > (englishIndicators?.length || 0)) {
+          detectedLanguage = 'es';
+        } else if (englishIndicators && englishIndicators.length > (spanishIndicators?.length || 0)) {
+          detectedLanguage = 'en';
+        }
       }
     }
     
@@ -240,16 +388,42 @@ export async function POST(request: NextRequest) {
       }
 
       // Create a strict system prompt that tells the AI to ask the exact question
+      const languageInstruction = detectedLanguage === 'es' 
+        ? 'IMPORTANTE: El paciente está escribiendo en ESPAÑOL. Debes responder SIEMPRE en ESPAÑOL. Todas tus respuestas deben estar en español.'
+        : 'IMPORTANT: The patient is writing in ENGLISH. You must respond ALWAYS in ENGLISH. All your responses must be in English.';
+      
+      // Define appropriate acknowledgments based on language
+      const acknowledgments = detectedLanguage === 'es' 
+        ? ['Entiendo.', 'Gracias.', 'Perfecto.']
+        : ['I see.', 'Thank you.', 'Perfect.'];
+      
+      const acknowledgmentExample = detectedLanguage === 'es' ? 'Entiendo.' : 'I see.';
+      
       const strictPrompt = `You are a professional medical pre-consultation assistant. Your role is to follow a STRICT structured interview script.
 
-CRITICAL INSTRUCTION: You MUST ask the following question EXACTLY as written, word for word. Do NOT deviate from this question. Do NOT add extra commentary. Do NOT improvise.
+${languageInstruction}
+
+CRITICAL INSTRUCTIONS:
+1. You MUST ask the following question EXACTLY as written, word for word.
+2. Do NOT deviate from this question. Do NOT add extra commentary. Do NOT improvise.
+3. RESPOND COMPLETELY IN ${detectedLanguage === 'es' ? 'SPANISH' : 'ENGLISH'} - EVERY SINGLE WORD MUST BE IN ${detectedLanguage === 'es' ? 'SPANISH' : 'ENGLISH'}.
+4. NEVER mix languages. NEVER use Spanish words if responding in English, and NEVER use English words if responding in Spanish.
+5. NEVER say "I'm not sure I understand" or "I don't understand" or similar phrases.
+6. NEVER express confusion or uncertainty about the patient's response.
+7. ALWAYS proceed to the next question, regardless of how brief or ambiguous the patient's response may be.
+8. If the patient's response is short (like "si", "yes", "bastante", "mucho"), you may add a VERY brief acknowledgment (1-2 words) in ${detectedLanguage === 'es' ? 'SPANISH' : 'ENGLISH'} ONLY, then IMMEDIATELY ask the exact question.
+9. Your ONLY job is to ask the next question in the script. Do not evaluate or comment on the patient's responses.
 
 QUESTION TO ASK (COPY THIS EXACTLY):
 "${nextQuestion}"
 
 The patient has just responded: "${message}"
 
-Your response should be ONLY the question above, exactly as written. You may add a very brief (1-2 words) empathetic acknowledgment before the question if appropriate, but then ask the exact question.`;
+Your response format:
+- Option 1: Ask the question directly: "${nextQuestion}"
+- Option 2: Add a brief ${detectedLanguage === 'es' ? 'SPANISH' : 'ENGLISH'} acknowledgment (like "${acknowledgmentExample}") followed by the question: "${acknowledgmentExample} ${nextQuestion}"
+
+REMEMBER: EVERY WORD must be in ${detectedLanguage === 'es' ? 'SPANISH' : 'ENGLISH'}. NO MIXING LANGUAGES.`;
 
       const messages: any[] = [
         {
@@ -269,7 +443,81 @@ Your response should be ONLY the question above, exactly as written. You may add
         max_tokens: 200,
       });
 
-      const responseContent = completion.choices[0]?.message?.content || nextQuestion;
+      let responseContent = completion.choices[0]?.message?.content || nextQuestion;
+      
+      // Filter out "I'm not sure" or similar confusion messages
+      const confusionPatterns = [
+        /I'm not sure I understand/i,
+        /I don't understand/i,
+        /I'm not sure/i,
+        /I'm confused/i,
+        /No estoy seguro/i,
+        /No entiendo/i,
+        /No estoy segura/i,
+        /I'm unclear/i,
+        /No tengo claro/i
+      ];
+      
+      // If response contains confusion, replace with the exact question
+      if (confusionPatterns.some(pattern => pattern.test(responseContent))) {
+        console.log('⚠️ Groq generated confusion message, replacing with exact question');
+        responseContent = nextQuestion;
+      }
+      
+      // Detect and fix language mixing
+      const spanishAckPatterns = /\b(entiendo|gracias|perfecto|comprendo)\b/i;
+      const englishAckPatterns = /\b(i see|thank you|perfect|i understand)\b/i;
+      
+      const hasSpanishAck = spanishAckPatterns.test(responseContent);
+      const hasEnglishAck = englishAckPatterns.test(responseContent);
+      
+      // Check if question is in English or Spanish (check the question itself, not the response)
+      const questionIsEnglish = /\b(How|What|When|Where|Why|Who|Are|Is|Do|Can|Could|Have|Has|Tell|Could you|Would you)\b/i.test(nextQuestion);
+      const questionIsSpanish = /\b(¿|Cómo|Qué|Cuándo|Dónde|Por qué|Quién|Eres|Es|Tienes|Tiene|Podrías|Podría|Cuéntame|Dime)\b/i.test(nextQuestion) || 
+                                /cuánto|cuánta|cuántos|cuántas/i.test(nextQuestion);
+      
+      // Detect language mixing: Spanish acknowledgment + English question OR English acknowledgment + Spanish question
+      const isMixed = (hasSpanishAck && questionIsEnglish) || (hasEnglishAck && questionIsSpanish);
+      
+      if (isMixed) {
+        console.log('⚠️ Language mixing detected, fixing...');
+        if (detectedLanguage === 'es') {
+          // Remove English acknowledgments, ensure Spanish
+          responseContent = responseContent
+            .replace(/\b(I see|Thank you|Perfect|I understand)\b/gi, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+          // If response doesn't start with Spanish acknowledgment and question is Spanish, add one
+          if (!spanishAckPatterns.test(responseContent) && questionIsSpanish) {
+            responseContent = `Entiendo. ${nextQuestion}`;
+          } else if (!responseContent.includes(nextQuestion)) {
+            responseContent = nextQuestion;
+          }
+        } else {
+          // Remove Spanish acknowledgments, ensure English
+          responseContent = responseContent
+            .replace(/\b(Entiendo|Gracias|Perfecto|Comprendo)\b/gi, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+          // If response doesn't start with English acknowledgment and question is English, add one
+          if (!englishAckPatterns.test(responseContent) && questionIsEnglish) {
+            responseContent = `I see. ${nextQuestion}`;
+          } else if (!responseContent.includes(nextQuestion)) {
+            responseContent = nextQuestion;
+          }
+        }
+        // Final safety: if question is not present, use it directly
+        if (!responseContent.includes(nextQuestion)) {
+          responseContent = nextQuestion;
+        }
+      }
+      
+      // Ensure response contains the question (safety check)
+      // Extract just the question part if response is too long or doesn't contain it
+      if (!responseContent.includes(nextQuestion.substring(0, 20))) {
+        // If response doesn't contain the question, use the question directly
+        responseContent = nextQuestion;
+      }
 
       return NextResponse.json({ 
         response: responseContent,
